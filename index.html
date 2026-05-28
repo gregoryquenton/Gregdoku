@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Grid Knot Study · Local Test</title>
+  <title>Grid Knot Study · Fixed Levels Test</title>
   <style>
     :root {
       --pink:#f2a7c8; --ink:#222; --muted:#777; --bg:#f7f4f1;
@@ -24,7 +24,7 @@
     .boardWrap { border:1px solid #ddd6d0; border-radius:20px; background:#fbfaf8; padding:16px; display:flex; justify-content:center; }
     svg { width:100%; max-width:540px; display:block; cursor:crosshair; touch-action:manipulation; user-select:none; }
     .visual { pointer-events:none; }
-    .click-catcher { pointer-events:all; cursor:crosshair; -webkit-tap-highlight-color: transparent; }
+    .click-catcher { pointer-events:all; cursor:crosshair; }
     .panel { border:1px solid #ddd6d0; border-radius:20px; background:white; padding:16px; margin-bottom:14px; }
     .panel h2 { font-size:15px; margin:0 0 10px; }
     .msg { min-height:38px; font-size:14px; color:var(--muted); }
@@ -57,7 +57,7 @@
   <header>
     <div>
       <h1>Grid Knot Study</h1>
-      <div class="sub" id="subtitle">MVP local · 7×7</div>
+      <div class="sub" id="subtitle">MVP fijo · 7×7</div>
     </div>
     <div class="buttons">
       <button id="btnReference">Ver ruta de referencia</button>
@@ -126,7 +126,7 @@
       </section>
 
       <section class="panel small">
-        Reglas: S→L, trazos rectos ortogonales, sin repetir pasillos, no tocar cuerda fuera de nudos. Cada paso por un nudo consume 2 puertos; con 2 pasos queda 2/2. La ruta de referencia no es necesariamente única ni óptima.
+        Reglas: S→L, trazos rectos ortogonales, sin repetir pasillos, no tocar cuerda fuera de nudos. Cada paso por un nudo consume 2 puertos; con 2 pasos queda 2/2. La ruta de referencia no es necesariamente única ni óptima. Esta versión usa 20 niveles fijos para que todos los dispositivos muestren las mismas tablas.
       </section>
     </aside>
   </main>
@@ -276,14 +276,7 @@ function segmentPoints(a,b){
   return out;
 }
 function segmentUnitEdges(a,b){const pts=segmentPoints(a,b),edges=[];for(let i=0;i<pts.length-1;i++)edges.push([pts[i],pts[i+1]]);return edges;}
-function pathUnitEdges(path){
-  var out=[];
-  for(var i=1;i<path.length;i++){
-    var edges=segmentUnitEdges(path[i-1],path[i]);
-    for(var j=0;j<edges.length;j++) out.push(edges[j]);
-  }
-  return out;
-}
+function pathUnitEdges(path){return path.flatMap((_,i)=>i===0?[]:segmentUnitEdges(path[i-1],path[i]));}
 
 function deriveKnots(solution){
   const dirs=new Map(),start=pointKey(solution[0]),end=pointKey(solution[solution.length-1]);
@@ -329,44 +322,17 @@ function validateSolution(solution){
       usedPoints.add(k);
     }
   }
-  const solved=knots.filter(k=>((knotDirs.get(pointKey(k)) && knotDirs.get(pointKey(k)).size) || 0)===4).length;
+  const solved=knots.filter(k=>(knotDirs.get(pointKey(k))?.size||0)===4).length;
   if(solved!==knots.length)return{ok:false,reason:"nudos incompletos"};
   return{ok:true,knots,traceCount:solution.length-1,corridorCount:usedEdges.size};
 }
 
-function rng(seed){let t=seed>>>0;return()=>{t+=0x6D2B79F5;let r=Math.imul(t^(t>>>15),1|t);r^=r+Math.imul(r^(r>>>7),61|r);return((r^(r>>>14))>>>0)/4294967296;};}
-function randomBorderPoint(rand){const side=Math.floor(rand()*4),v=Math.floor(rand()*GRID_SIZE);if(side===0)return{x:v,y:0};if(side===1)return{x:GRID_SIZE-1,y:v};if(side===2)return{x:v,y:GRID_SIZE-1};return{x:0,y:v};}
-function generateCandidate(seed,minKnots,maxKnots){
-  const rand=rng(seed),start=randomBorderPoint(rand);let current=start;const path=[start],usedEdges=new Set(),maxTraces=10+maxKnots*4;
-  for(let step=0;step<maxTraces;step++){
-    const candidates=[];for(let x=0;x<GRID_SIZE;x++)if(x!==current.x)candidates.push({x,y:current.y});for(let y=0;y<GRID_SIZE;y++)if(y!==current.y)candidates.push({x:current.x,y});
-    candidates.sort(()=>rand()-0.5);let moved=false;
-    for(const target of candidates){const edges=segmentUnitEdges(current,target);if(edges.some(([a,b])=>usedEdges.has(edgeKey(a,b))))continue;for(const[a,b]of edges)usedEdges.add(edgeKey(a,b));path.push(target);current=target;moved=true;break;}
-    if(!moved)break;
-    if(step>=6&&isBorder(current)&&pointKey(current)!==pointKey(start)){const v=validateSolution(path);if(v.ok&&v.knots.length>=minKnots&&v.knots.length<=maxKnots)return{solution:path,validation:v};}
-  }
-  return null;
-}
-function buildLevelBank(){
-  const buckets=Object.fromEntries(DIFFICULTIES.map(d=>[d.id,[]]));let seed=1000,guard=0;
-  while(guard<40000&&DIFFICULTIES.some(d=>buckets[d.id].length<d.target)){
-    guard++;const difficulty=DIFFICULTIES.find(d=>buckets[d.id].length<d.target);const[min,max]=difficulty.range;const candidate=generateCandidate(seed++,min,max);if(!candidate)continue;
-    const signature=candidate.solution.map(pointKey).join(";");if(Object.values(buckets).flat().some(l=>l.signature===signature))continue;
-    buckets[difficulty.id].push({id:`${difficulty.id}-${buckets[difficulty.id].length+1}`,difficulty:difficulty.id,difficultyLabel:difficulty.label,name:`${difficulty.label} ${buckets[difficulty.id].length+1}`,solution:candidate.solution,signature});
-  }
-  var all=[];
-  for(var bi=0;bi<DIFFICULTIES.length;bi++){
-    var bucket=buckets[DIFFICULTIES[bi].id];
-    for(var bj=0;bj<bucket.length;bj++) all.push(bucket[bj]);
-  }
-  return all;
-}
-const LEVELS=buildLevelBank();
+const LEVELS = [{"id":"starter-1","difficulty":"starter","difficultyLabel":"Principiante+","name":"Principiante+ 1","solution":[{"x":1,"y":0},{"x":1,"y":6},{"x":2,"y":6},{"x":2,"y":5},{"x":3,"y":5},{"x":3,"y":1},{"x":1,"y":1},{"x":0,"y":1},{"x":0,"y":5},{"x":1,"y":5},{"x":2,"y":5},{"x":2,"y":1},{"x":2,"y":0}],"signature":"1,0;1,6;2,6;2,5;3,5;3,1;1,1;0,1;0,5;1,5;2,5;2,1;2,0"},{"id":"starter-2","difficulty":"starter","difficultyLabel":"Principiante+","name":"Principiante+ 2","solution":[{"x":1,"y":0},{"x":2,"y":0},{"x":2,"y":2},{"x":5,"y":2},{"x":6,"y":2},{"x":6,"y":1},{"x":3,"y":1},{"x":3,"y":6},{"x":0,"y":6},{"x":0,"y":3},{"x":3,"y":3},{"x":5,"y":3},{"x":5,"y":2},{"x":5,"y":1},{"x":5,"y":0}],"signature":"1,0;2,0;2,2;5,2;6,2;6,1;3,1;3,6;0,6;0,3;3,3;5,3;5,2;5,1;5,0"},{"id":"starter-3","difficulty":"starter","difficultyLabel":"Principiante+","name":"Principiante+ 3","solution":[{"x":6,"y":6},{"x":2,"y":6},{"x":2,"y":1},{"x":0,"y":1},{"x":0,"y":3},{"x":4,"y":3},{"x":4,"y":0},{"x":1,"y":0},{"x":1,"y":5},{"x":0,"y":5}],"signature":"6,6;2,6;2,1;0,1;0,3;4,3;4,0;1,0;1,5;0,5"},{"id":"starter-4","difficulty":"starter","difficultyLabel":"Principiante+","name":"Principiante+ 4","solution":[{"x":4,"y":0},{"x":4,"y":4},{"x":4,"y":6},{"x":0,"y":6},{"x":0,"y":1},{"x":3,"y":1},{"x":4,"y":1},{"x":6,"y":1},{"x":6,"y":3},{"x":2,"y":3},{"x":2,"y":2},{"x":2,"y":1},{"x":2,"y":0}],"signature":"4,0;4,4;4,6;0,6;0,1;3,1;4,1;6,1;6,3;2,3;2,2;2,1;2,0"},{"id":"medium-1","difficulty":"medium","difficultyLabel":"Intermedio","name":"Intermedio 1","solution":[{"x":2,"y":0},{"x":2,"y":1},{"x":2,"y":2},{"x":4,"y":2},{"x":4,"y":5},{"x":3,"y":5},{"x":3,"y":4},{"x":6,"y":4},{"x":6,"y":3},{"x":5,"y":3},{"x":3,"y":3},{"x":3,"y":2},{"x":3,"y":1},{"x":5,"y":1},{"x":5,"y":2},{"x":5,"y":5},{"x":5,"y":6}],"signature":"2,0;2,1;2,2;4,2;4,5;3,5;3,4;6,4;6,3;5,3;3,3;3,2;3,1;5,1;5,2;5,5;5,6"},{"id":"medium-2","difficulty":"medium","difficultyLabel":"Intermedio","name":"Intermedio 2","solution":[{"x":3,"y":0},{"x":2,"y":0},{"x":2,"y":4},{"x":2,"y":6},{"x":3,"y":6},{"x":4,"y":6},{"x":5,"y":6},{"x":5,"y":3},{"x":3,"y":3},{"x":3,"y":1},{"x":4,"y":1},{"x":4,"y":4},{"x":3,"y":4},{"x":0,"y":4},{"x":0,"y":2},{"x":3,"y":2},{"x":6,"y":2}],"signature":"3,0;2,0;2,4;2,6;3,6;4,6;5,6;5,3;3,3;3,1;4,1;4,4;3,4;0,4;0,2;3,2;6,2"},{"id":"medium-3","difficulty":"medium","difficultyLabel":"Intermedio","name":"Intermedio 3","solution":[{"x":0,"y":5},{"x":2,"y":5},{"x":2,"y":6},{"x":5,"y":6},{"x":5,"y":3},{"x":5,"y":1},{"x":5,"y":0},{"x":1,"y":0},{"x":0,"y":0},{"x":0,"y":1},{"x":1,"y":1},{"x":4,"y":1},{"x":4,"y":5},{"x":5,"y":5},{"x":6,"y":5},{"x":6,"y":4},{"x":0,"y":4},{"x":0,"y":2},{"x":1,"y":2},{"x":4,"y":2},{"x":6,"y":2}],"signature":"0,5;2,5;2,6;5,6;5,3;5,1;5,0;1,0;0,0;0,1;1,1;4,1;4,5;5,5;6,5;6,4;0,4;0,2;1,2;4,2;6,2"},{"id":"medium-4","difficulty":"medium","difficultyLabel":"Intermedio","name":"Intermedio 4","solution":[{"x":4,"y":6},{"x":4,"y":5},{"x":4,"y":4},{"x":0,"y":4},{"x":0,"y":3},{"x":6,"y":3},{"x":6,"y":1},{"x":2,"y":1},{"x":1,"y":1},{"x":1,"y":5},{"x":4,"y":5},{"x":6,"y":5},{"x":6,"y":4},{"x":4,"y":4},{"x":4,"y":0}],"signature":"4,6;4,5;4,4;0,4;0,3;6,3;6,1;2,1;1,1;1,5;4,5;6,5;6,4;4,4;4,0"},{"id":"hard-1","difficulty":"hard","difficultyLabel":"Avanzado","name":"Avanzado 1","solution":[{"x":1,"y":0},{"x":1,"y":3},{"x":1,"y":4},{"x":4,"y":4},{"x":4,"y":1},{"x":1,"y":1},{"x":0,"y":1},{"x":0,"y":2},{"x":4,"y":2},{"x":5,"y":2},{"x":5,"y":1},{"x":5,"y":0},{"x":4,"y":0},{"x":4,"y":1},{"x":5,"y":1},{"x":6,"y":1},{"x":6,"y":2},{"x":5,"y":2},{"x":5,"y":4},{"x":4,"y":4},{"x":4,"y":5},{"x":4,"y":6}],"signature":"1,0;1,3;1,4;4,4;4,1;1,1;0,1;0,2;4,2;5,2;5,1;5,0;4,0;4,1;5,1;6,1;6,2;5,2;5,4;4,4;4,5;4,6"},{"id":"hard-2","difficulty":"hard","difficultyLabel":"Avanzado","name":"Avanzado 2","solution":[{"x":0,"y":6},{"x":1,"y":6},{"x":1,"y":2},{"x":4,"y":2},{"x":4,"y":1},{"x":1,"y":1},{"x":1,"y":2},{"x":0,"y":2},{"x":0,"y":3},{"x":1,"y":3},{"x":3,"y":3},{"x":4,"y":3},{"x":6,"y":3},{"x":6,"y":1},{"x":5,"y":1},{"x":4,"y":1},{"x":4,"y":0},{"x":5,"y":0},{"x":5,"y":4},{"x":3,"y":4},{"x":1,"y":4},{"x":0,"y":4},{"x":0,"y":5},{"x":1,"y":5},{"x":4,"y":5},{"x":5,"y":5},{"x":5,"y":6}],"signature":"0,6;1,6;1,2;4,2;4,1;1,1;1,2;0,2;0,3;1,3;3,3;4,3;6,3;6,1;5,1;4,1;4,0;5,0;5,4;3,4;1,4;0,4;0,5;1,5;4,5;5,5;5,6"},{"id":"hard-3","difficulty":"hard","difficultyLabel":"Avanzado","name":"Avanzado 3","solution":[{"x":0,"y":6},{"x":1,"y":6},{"x":3,"y":6},{"x":5,"y":6},{"x":5,"y":5},{"x":5,"y":2},{"x":3,"y":2},{"x":3,"y":0},{"x":6,"y":0},{"x":6,"y":4},{"x":0,"y":4},{"x":0,"y":5},{"x":2,"y":5},{"x":4,"y":5},{"x":4,"y":4},{"x":4,"y":1},{"x":3,"y":1},{"x":0,"y":1},{"x":0,"y":0},{"x":1,"y":0},{"x":1,"y":1},{"x":1,"y":6}],"signature":"0,6;1,6;3,6;5,6;5,5;5,2;3,2;3,0;6,0;6,4;0,4;0,5;2,5;4,5;4,4;4,1;3,1;0,1;0,0;1,0;1,1;1,6"},{"id":"hard-4","difficulty":"hard","difficultyLabel":"Avanzado","name":"Avanzado 4","solution":[{"x":2,"y":0},{"x":2,"y":3},{"x":2,"y":6},{"x":0,"y":6},{"x":0,"y":4},{"x":1,"y":4},{"x":3,"y":4},{"x":3,"y":1},{"x":1,"y":1},{"x":0,"y":1},{"x":0,"y":3},{"x":4,"y":3},{"x":5,"y":3},{"x":5,"y":0},{"x":6,"y":0},{"x":6,"y":2},{"x":6,"y":4},{"x":3,"y":4},{"x":3,"y":6},{"x":4,"y":6},{"x":4,"y":2},{"x":4,"y":1},{"x":4,"y":0}],"signature":"2,0;2,3;2,6;0,6;0,4;1,4;3,4;3,1;1,1;0,1;0,3;4,3;5,3;5,0;6,0;6,2;6,4;3,4;3,6;4,6;4,2;4,1;4,0"},{"id":"master-1","difficulty":"master","difficultyLabel":"Maestro","name":"Maestro 1","solution":[{"x":5,"y":6},{"x":5,"y":0},{"x":4,"y":0},{"x":4,"y":6},{"x":0,"y":6},{"x":0,"y":0},{"x":1,"y":0},{"x":1,"y":1},{"x":5,"y":1},{"x":6,"y":1},{"x":6,"y":2},{"x":1,"y":2},{"x":1,"y":5},{"x":6,"y":5},{"x":6,"y":3},{"x":3,"y":3},{"x":3,"y":0}],"signature":"5,6;5,0;4,0;4,6;0,6;0,0;1,0;1,1;5,1;6,1;6,2;1,2;1,5;6,5;6,3;3,3;3,0"},{"id":"master-2","difficulty":"master","difficultyLabel":"Maestro","name":"Maestro 2","solution":[{"x":3,"y":6},{"x":3,"y":3},{"x":1,"y":3},{"x":1,"y":5},{"x":5,"y":5},{"x":5,"y":3},{"x":5,"y":0},{"x":3,"y":0},{"x":3,"y":1},{"x":4,"y":1},{"x":4,"y":2},{"x":4,"y":4},{"x":6,"y":4},{"x":6,"y":3},{"x":5,"y":3},{"x":4,"y":3},{"x":3,"y":3},{"x":3,"y":1},{"x":0,"y":1},{"x":0,"y":2},{"x":1,"y":2},{"x":2,"y":2},{"x":3,"y":2},{"x":4,"y":2},{"x":6,"y":2}],"signature":"3,6;3,3;1,3;1,5;5,5;5,3;5,0;3,0;3,1;4,1;4,2;4,4;6,4;6,3;5,3;4,3;3,3;3,1;0,1;0,2;1,2;2,2;3,2;4,2;6,2"},{"id":"master-3","difficulty":"master","difficultyLabel":"Maestro","name":"Maestro 3","solution":[{"x":2,"y":0},{"x":2,"y":1},{"x":2,"y":4},{"x":1,"y":4},{"x":1,"y":6},{"x":3,"y":6},{"x":3,"y":3},{"x":3,"y":0},{"x":6,"y":0},{"x":6,"y":2},{"x":0,"y":2},{"x":0,"y":1},{"x":3,"y":1},{"x":5,"y":1},{"x":5,"y":2},{"x":5,"y":3},{"x":1,"y":3},{"x":1,"y":1},{"x":1,"y":0}],"signature":"2,0;2,1;2,4;1,4;1,6;3,6;3,3;3,0;6,0;6,2;0,2;0,1;3,1;5,1;5,2;5,3;1,3;1,1;1,0"},{"id":"master-4","difficulty":"master","difficultyLabel":"Maestro","name":"Maestro 4","solution":[{"x":3,"y":0},{"x":3,"y":2},{"x":0,"y":2},{"x":0,"y":1},{"x":1,"y":1},{"x":6,"y":1},{"x":6,"y":2},{"x":4,"y":2},{"x":4,"y":6},{"x":3,"y":6},{"x":0,"y":6},{"x":0,"y":3},{"x":5,"y":3},{"x":5,"y":5},{"x":3,"y":5},{"x":3,"y":4},{"x":3,"y":3},{"x":3,"y":2},{"x":4,"y":2},{"x":4,"y":0},{"x":5,"y":0},{"x":5,"y":1},{"x":5,"y":2},{"x":5,"y":3},{"x":6,"y":3}],"signature":"3,0;3,2;0,2;0,1;1,1;6,1;6,2;4,2;4,6;3,6;0,6;0,3;5,3;5,5;3,5;3,4;3,3;3,2;4,2;4,0;5,0;5,1;5,2;5,3;6,3"},{"id":"extreme-1","difficulty":"extreme","difficultyLabel":"Diabólico","name":"Diabólico 1","solution":[{"x":6,"y":4},{"x":0,"y":4},{"x":0,"y":2},{"x":3,"y":2},{"x":3,"y":4},{"x":3,"y":6},{"x":1,"y":6},{"x":1,"y":1},{"x":0,"y":1},{"x":0,"y":0},{"x":1,"y":0},{"x":2,"y":0},{"x":3,"y":0},{"x":3,"y":1},{"x":3,"y":2},{"x":5,"y":2},{"x":5,"y":5},{"x":5,"y":6},{"x":4,"y":6},{"x":4,"y":0},{"x":6,"y":0},{"x":6,"y":3},{"x":2,"y":3},{"x":2,"y":0}],"signature":"6,4;0,4;0,2;3,2;3,4;3,6;1,6;1,1;0,1;0,0;1,0;2,0;3,0;3,1;3,2;5,2;5,5;5,6;4,6;4,0;6,0;6,3;2,3;2,0"},{"id":"extreme-2","difficulty":"extreme","difficultyLabel":"Diabólico","name":"Diabólico 2","solution":[{"x":6,"y":0},{"x":6,"y":2},{"x":2,"y":2},{"x":2,"y":6},{"x":4,"y":6},{"x":4,"y":4},{"x":4,"y":3},{"x":6,"y":3},{"x":6,"y":4},{"x":0,"y":4},{"x":0,"y":3},{"x":4,"y":3},{"x":4,"y":1},{"x":4,"y":0},{"x":2,"y":0},{"x":2,"y":2},{"x":1,"y":2},{"x":1,"y":0},{"x":0,"y":0},{"x":0,"y":1},{"x":1,"y":1},{"x":2,"y":1},{"x":5,"y":1},{"x":5,"y":2},{"x":5,"y":3},{"x":5,"y":4},{"x":5,"y":6}],"signature":"6,0;6,2;2,2;2,6;4,6;4,4;4,3;6,3;6,4;0,4;0,3;4,3;4,1;4,0;2,0;2,2;1,2;1,0;0,0;0,1;1,1;2,1;5,1;5,2;5,3;5,4;5,6"},{"id":"extreme-3","difficulty":"extreme","difficultyLabel":"Diabólico","name":"Diabólico 3","solution":[{"x":6,"y":4},{"x":0,"y":4},{"x":0,"y":2},{"x":5,"y":2},{"x":6,"y":2},{"x":6,"y":0},{"x":5,"y":0},{"x":5,"y":5},{"x":1,"y":5},{"x":1,"y":4},{"x":1,"y":3},{"x":2,"y":3},{"x":4,"y":3},{"x":4,"y":0},{"x":2,"y":0},{"x":2,"y":5},{"x":2,"y":6},{"x":4,"y":6},{"x":4,"y":3},{"x":6,"y":3}],"signature":"6,4;0,4;0,2;5,2;6,2;6,0;5,0;5,5;1,5;1,4;1,3;2,3;4,3;4,0;2,0;2,5;2,6;4,6;4,3;6,3"},{"id":"extreme-4","difficulty":"extreme","difficultyLabel":"Diabólico","name":"Diabólico 4","solution":[{"x":0,"y":6},{"x":3,"y":6},{"x":3,"y":3},{"x":3,"y":0},{"x":4,"y":0},{"x":4,"y":2},{"x":1,"y":2},{"x":1,"y":0},{"x":0,"y":0},{"x":0,"y":2},{"x":0,"y":3},{"x":4,"y":3},{"x":4,"y":5},{"x":2,"y":5},{"x":2,"y":2},{"x":2,"y":1},{"x":4,"y":1},{"x":6,"y":1},{"x":6,"y":3},{"x":6,"y":4},{"x":1,"y":4},{"x":1,"y":3},{"x":1,"y":2},{"x":0,"y":2}],"signature":"0,6;3,6;3,3;3,0;4,0;4,2;1,2;1,0;0,0;0,2;0,3;4,3;4,5;2,5;2,2;2,1;4,1;6,1;6,3;6,4;1,4;1,3;1,2;0,2"}];
 
 function cloneKnotDirs(map){const next=new Map();for(const[k,dirs]of map.entries())next.set(k,new Set(dirs));return next;}
 function serializeKnotDirs(map){return Array.from(map.entries()).map(([k,dirs])=>[k,Array.from(dirs)]);}
 function hydrateKnotDirs(entries){return new Map(entries.map(([k,dirs])=>[k,new Set(dirs)]));}
-function loadJson(key,fallback){try{return (JSON.parse(localStorage.getItem(key)) || fallback);}catch{return fallback;}}
+function loadJson(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}}
 function saveJson(key,value){localStorage.setItem(key,JSON.stringify(value));}
 function downloadText(filename,text,mimeType="text/plain"){const blob=new Blob([text],{type:mimeType}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);}
 
@@ -379,7 +345,7 @@ const state={
 };
 
 function getLevelsForDifficulty(){return LEVELS.filter(l=>l.difficulty===state.difficultyId);}
-function getRawLevel(){return (getLevelsForDifficulty()[state.levelIndex] || LEVELS[0]);}
+function getRawLevel(){return getLevelsForDifficulty()[state.levelIndex]??LEVELS[0];}
 function getLevel(){const raw=getRawLevel(),validation=validateSolution(raw.solution);return{...raw,start:raw.solution[0],end:raw.solution[raw.solution.length-1],knots:validation.ok?validation.knots:deriveKnots(raw.solution),validation};}
 function getFeedbackKey(){return`draft:${getLevel().id}`;}
 function getFeedback(){return state.drafts[getFeedbackKey()]||{perceived:"",interest:"",frustration:"",usedGiros:false,usedNotes:false,comment:""};}
@@ -417,7 +383,7 @@ function applyMoveState(origin,target,baseEdges,basePoints,baseKnotDirs){
 function tryMove(target){
   if(state.locked)return;const level=getLevel(),result=applyMoveState(state.current,target,state.usedEdges,state.usedPoints,state.knotDirs);
   if(!result.ok){state.message=result.message;render();return;}
-  const reachedEnd=pointKey(target)===pointKey(level.end),nextSolved=level.knots.filter(k=>((result.nextKnotDirs.get(pointKey(k)) && result.nextKnotDirs.get(pointKey(k)).size) || 0)===4).length;
+  const reachedEnd=pointKey(target)===pointKey(level.end),nextSolved=level.knots.filter(k=>(result.nextKnotDirs.get(pointKey(k))?.size||0)===4).length;
   if(reachedEnd&&nextSolved!==level.knots.length){state.message="Aún no puedes llegar: cada nudo rosa necesita 2/2.";render();return;}
   state.history.push(makeSnapshot());state.current=target;state.path=[...state.path,target];state.usedEdges=result.nextEdges;state.usedPoints=result.nextPoints;state.knotDirs=result.nextKnotDirs;
   state.message=reachedEnd?"Llegada alcanzada. Nivel completado.":"Trazo válido.";
@@ -437,7 +403,7 @@ function toggleNotes(){if(state.locked)return;state.noteMode=!state.noteMode;if(
 function undoNote(){if(state.locked||!state.noteHistory.length)return;const s=state.noteHistory.pop();state.noteCurrent=s.current;state.notePath=s.path;state.noteUsedEdges=new Set(s.usedEdges);state.noteUsedPoints=new Set(s.usedPoints);state.noteKnotDirs=hydrateKnotDirs(s.knotDirs);state.message="Nota deshecha.";render();}
 function clearNotes(){if(state.locked)return;state.notePath=[];state.noteCurrent=null;state.noteUsedEdges=new Set();state.noteUsedPoints=new Set();state.noteKnotDirs=new Map();state.noteHistory=[];state.message="Notas borradas.";render();}
 function saveFeedback(){
-  const level=getLevel(),levels=getLevelsForDifficulty(),fb=getFeedback(),elapsed=formatElapsed((state.finishedAt || state.now)-state.startedAt),referenceCorr=pathUnitEdges(level.solution).length;
+  const level=getLevel(),levels=getLevelsForDifficulty(),fb=getFeedback(),elapsed=formatElapsed((state.finishedAt??state.now)-state.startedAt),referenceCorr=pathUnitEdges(level.solution).length;
   const entry={id:`${level.difficulty}-${state.levelIndex+1}-${Date.now()}`,difficulty:level.difficultyLabel,levelName:level.name,levelNumber:`${state.levelIndex+1}/${levels.length}`,levelId:level.id,knots:level.knots.length,solved:state.locked,playerCorridors:state.usedEdges.size,playerTraces:state.path.length-1,referenceCorridors:referenceCorr,referenceTraces:level.solution.length-1,improvementVsReference:referenceCorr-state.usedEdges.size,time:elapsed,perceivedDifficulty:fb.perceived,interest:fb.interest,frustration:fb.frustration,usedGiros:fb.usedGiros,usedNotes:fb.usedNotes,comment:fb.comment};
   state.feedbackLog.push(entry);saveJson(STORAGE_FEEDBACK,state.feedbackLog);state.message="Feedback guardado para análisis.";render();
 }
@@ -464,7 +430,7 @@ function renderBoard(){
   if(state.path.length)board.appendChild(polyline(pointsString(state.path),{stroke:COLORS.rope,"stroke-width":16,"stroke-linecap":"square","stroke-linejoin":"miter"}));
 
   const displayDirs=state.noteMode&&state.notePath.length?state.noteKnotDirs:state.knotDirs;
-  for(const n of level.knots){const p=toSvg(n),ports=(displayDirs.get(pointKey(n)) && displayDirs.get(pointKey(n)).size) || 0,passes=Math.floor(ports/2),solved=ports===4;
+  for(const n of level.knots){const p=toSvg(n),ports=displayDirs.get(pointKey(n))?.size||0,passes=Math.floor(ports/2),solved=ports===4;
     board.appendChild(svgEl("circle",{cx:p.x,cy:p.y,r:solved?14:10,fill:COLORS.pink,stroke:solved?COLORS.ink:"white","stroke-width":solved?3:2,class:"visual"}));
     const t=svgEl("text",{x:p.x,y:p.y+4,"text-anchor":"middle","font-size":10,"font-weight":700,fill:COLORS.ink,class:"visual"});t.textContent=`${passes}/2`;board.appendChild(t);
   }
@@ -475,25 +441,16 @@ function renderBoard(){
   const lt=svgEl("text",{x:l.x,y:l.y+5,"text-anchor":"middle","font-size":12,"font-weight":700,fill:"white",class:"visual"});lt.textContent="L";board.appendChild(lt);
   if(!state.locked){const c=toSvg(state.current);board.appendChild(svgEl("circle",{cx:c.x,cy:c.y,r:23,fill:"none",stroke:COLORS.ink,"stroke-width":3,class:"visual"}));}
 
-  const catcher=svgEl("rect",{x:0,y:0,width:size,height:size,fill:"#fff","fill-opacity":"0.001",class:"click-catcher"});
-  function handleBoardEvent(evt){
-    if(evt.cancelable) evt.preventDefault();
-    var sourceEvent = evt.touches && evt.touches.length ? evt.touches[0] : evt;
-    handlePointClick(gridPointFromEvent(sourceEvent));
-  }
-  if(window.PointerEvent) catcher.addEventListener("pointerdown", handleBoardEvent);
-  else {
-    catcher.addEventListener("mousedown", handleBoardEvent);
-    catcher.addEventListener("touchstart", handleBoardEvent, {passive:false});
-  }
+  const catcher=svgEl("rect",{x:0,y:0,width:size,height:size,fill:"transparent",class:"click-catcher"});
+  catcher.addEventListener("click",evt=>handlePointClick(gridPointFromEvent(evt)));
   board.appendChild(catcher);
 }
 function updateFeedbackControls(){const fb=getFeedback();el("fbDifficulty").value=fb.perceived;el("fbInterest").value=fb.interest;el("fbFrustration").value=fb.frustration;el("fbGiros").checked=!!fb.usedGiros;el("fbNotes").checked=!!fb.usedNotes;el("fbComment").value=fb.comment||"";}
 function render(){
-  const level=getLevel(),levels=getLevelsForDifficulty(),elapsedMs=(state.finishedAt || state.now)-state.startedAt,elapsed=formatElapsed(elapsedMs),referenceCorr=pathUnitEdges(level.solution).length;
-  el("subtitle").textContent=`MVP local · 7×7 · ${level.name} · ${level.knots.length} nudos`;
+  const level=getLevel(),levels=getLevelsForDifficulty(),elapsedMs=(state.finishedAt??state.now)-state.startedAt,elapsed=formatElapsed(elapsedMs),referenceCorr=pathUnitEdges(level.solution).length;
+  el("subtitle").textContent=`MVP fijo · 7×7 · ${level.name} · ${level.knots.length} nudos`;
   el("message").textContent=state.message;el("statLevel").textContent=`${state.levelIndex+1}/${levels.length}`;
-  el("statKnots").textContent=`${level.knots.filter(k=>((state.knotDirs.get(pointKey(k)) && state.knotDirs.get(pointKey(k)).size) || 0)===4).length}/${level.knots.length}`;
+  el("statKnots").textContent=`${level.knots.filter(k=>(state.knotDirs.get(pointKey(k))?.size||0)===4).length}/${level.knots.length}`;
   el("statTraces").textContent=state.path.length-1;el("statCorridors").textContent=state.usedEdges.size;el("statTime").textContent=elapsed;el("statMode").textContent=state.noteMode?"Notas":"Normal";el("statReferencia").textContent=`${referenceCorr} pasillos`;el("statDiff").textContent=state.locked?String(referenceCorr-state.usedEdges.size):"—";
   el("feedbackCount").textContent=state.feedbackLog.length;el("btnReference").textContent=state.showReference?"Ocultar ruta de referencia":"Ver ruta de referencia"; el("btnReference").className=state.showReference?"active":"";el("btnUndo").disabled=state.locked||!state.history.length;el("btnUndoNote").disabled=state.locked||!state.noteHistory.length;el("btnClearNotes").disabled=state.locked||!state.notePath.length;el("btnNotes").disabled=state.locked;el("btnNotes").className=state.noteMode?"active":"";el("btnExport").disabled=!state.feedbackLog.length;
   if(state.locked){const score=Math.max(0,1000-(state.path.length-1)*35-state.usedEdges.size*4-Math.floor(elapsedMs/1000)*2);el("completePanel").style.display="block";el("completeCorridors").textContent=`${state.usedEdges.size} pasillos`;el("completeReferencia").textContent=`${referenceCorr} pasillos`;el("completeTraces").textContent=state.path.length-1;el("completeScore").textContent=score;}else el("completePanel").style.display="none";
@@ -533,7 +490,7 @@ runSmokeTests();bind();initDifficultyButtons();resetToLevel();
 setInterval(()=>{
   if(!state.locked){
     state.now=Date.now();
-    const elapsedMs=(state.finishedAt || state.now)-state.startedAt;
+    const elapsedMs=(state.finishedAt??state.now)-state.startedAt;
     el("statTime").textContent=formatElapsed(elapsedMs);
   }
 },250);
